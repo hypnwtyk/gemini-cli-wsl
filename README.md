@@ -106,7 +106,7 @@ If you previously installed the upstream CLI, uninstall it to avoid conflicts:
 
 ```bash
 npm -g uninstall @google/gemini-cli || true
-rm -f "$(npm root -g)/../bin/gemini"
+rm -f "$(npm prefix -g)/bin/gemini"
 ```
 
 Dev symlink (auto-picks up changes; rerun `npm run bundle` after edits):
@@ -122,6 +122,35 @@ GitHub install (may fail due to prepare/dev-deps; prefer the tarball method abov
 ```bash
 npm install -g gemini-cli-wsl@github:hypnwtyk/gemini-cli-wsl || true
 ```
+
+### WSL: ensure npm global bin is on PATH (npm v11+ safe)
+
+Do not overwrite your PATH. Add this guarded block to your shell profile so the global `gemini` shim is available without breaking core utilities.
+
+```bash
+# Keep system paths first
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+# npm v11 global bin on PATH (guarded)
+if command -v npm >/dev/null 2>&1; then
+  NPM_PREFIX="$(npm prefix -g 2>/dev/null)"
+  if [ -n "$NPM_PREFIX" ] && [ -d "$NPM_PREFIX/bin" ]; then
+    export PATH="$NPM_PREFIX/bin:$PATH"
+  fi
+fi
+
+# Reload your profile after editing:
+#   source ~/.bashrc   # or: source ~/.zshrc
+```
+
+Verify after installing:
+
+```bash
+which gemini
+gemini --version
+```
+
+Warning: If your shell suggests `sudo snap install gemini`, ignore it — that is a different, unrelated package.
 
 ### Use a Gemini API key
 
