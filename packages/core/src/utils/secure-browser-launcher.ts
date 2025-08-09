@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { platform } from 'node:os';
 import { URL } from 'node:url';
+import { isWSL as coreIsWSL } from './browser.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -84,11 +85,28 @@ export async function openBrowserSecurely(url: string): Promise<void> {
     case 'freebsd':
     case 'openbsd':
       // Linux and BSD variants
+      // First, honor an explicit BROWSER if it's a valid Linux binary path
+      {
+        const forced = resolveBrowserFromEnv();
+        if (forced) {
+          command = forced;
+          args = [url];
+          break;
+        }
+      }
       // If running under WSL, prefer native Linux browsers over Windows default.
       if (isWSL()) {
         const candidate = detectLinuxBrowserCandidate();
         if (candidate) {
           command = candidate;
+          args = [url];
+          break;
+        }
+        // If we detected WSLg (display present) but no known browser was found,
+        // try to auto-detect a .desktop default and resolve it to a real binary.
+        const desktopDefault = resolveDefaultLinuxBrowser();
+        if (desktopDefault) {
+          command = desktopDefault;
           args = [url];
           break;
         }
@@ -156,23 +174,46 @@ export async function openBrowserSecurely(url: string): Promise<void> {
 
 /** Detect if running inside Windows Subsystem for Linux (WSL). */
 function isWSL(): boolean {
-  if (platform() !== 'linux') return false;
-  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
-  try {
-    const os = require('node:os') as typeof import('node:os');
-    const release = String(os.release()).toLowerCase();
-    if (release.includes('microsoft')) return true;
-  } catch {
-    // ignore
+  // Delegate to the shared detector to keep logic consistent
+  return coreIsWSL();
+}
+
+/**
+ * If BROWSER is set, resolve it to an absolute Linux path and validate that it
+ * points to a browser binary within the current distro (not a Windows path or wslview).
+ */
+function resolveBrowserFromEnv(): string | null {
+  const b = process.env.BROWSER?.trim();
+  if (!b) return null;
+  // Strip desktop placeholders like "%U"
+  const token = b.split(/\s+/)[0];
+  if (!token || token.toLowerCase() === 'wslview') return null;
+  const { spawnSync } =
+    require('node:child_process') as typeof import('node:child_process');
+  const fs = require('node:fs') as typeof import('node:fs');
+  // If absolute path, verify it exists and is not a Windows mount
+  if (token.startsWith('/')) {
+    try {
+      fs.accessSync(token, fs.constants.X_OK);
+      if (!isWindowsMountedPath(token)) return token;
+    } catch {
+      return null;
+    }
+    return null;
   }
-  try {
-    const fs = require('node:fs') as typeof import('node:fs');
-    const version = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
-    if (version.includes('microsoft')) return true;
-  } catch {
-    // ignore
+  // Resolve via which
+  const res = spawnSync('which', [token], { encoding: 'utf8' });
+  if (res.status === 0) {
+    const resolved = String(res.stdout || '').trim();
+    if (
+      resolved &&
+      !isWindowsMountedPath(resolved) &&
+      resolved.toLowerCase() !== 'wslview'
+    ) {
+      return resolved;
+    }
   }
-  return false;
+  return null;
 }
 
 /**
@@ -183,18 +224,76 @@ function detectLinuxBrowserCandidate(): string | null {
   try {
     const { spawnSync } =
       require('node:child_process') as typeof import('node:child_process');
+    // Prefer Chrome/Chromium-family by default; fall back to others if absent
     const candidates = [
-      'firefox',
-      'chromium',
+      'google-chrome-stable',
       'google-chrome',
-      'brave-browser',
+      'chromium-browser',
+      'chromium',
       'microsoft-edge',
+      'brave-browser',
+      'firefox',
       'opera',
       'vivaldi',
     ];
     for (const name of candidates) {
-      const res = spawnSync('which', [name], { stdio: 'ignore' });
-      if (res.status === 0) return name;
+      const res = spawnSync('which', [name], { encoding: 'utf8' });
+      if (res.status === 0) {
+        const p = String(res.stdout || '').trim();
+        if (p && !isWindowsMountedPath(p)) return p;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/** Windows paths mounted into WSL appear under /mnt/<drive>/... */
+function isWindowsMountedPath(p: string): boolean {
+  return p.startsWith('/mnt/');
+}
+
+/**
+ * Resolve the user's default Linux browser via xdg-settings/xdg-mime and convert
+ * it to an executable path (rejecting Windows mounts and wslview).
+ */
+function resolveDefaultLinuxBrowser(): string | null {
+  try {
+    const { spawnSync } =
+      require('node:child_process') as typeof import('node:child_process');
+    // Try xdg-settings first
+    const out = spawnSync('xdg-settings', ['get', 'default-web-browser'], {
+      encoding: 'utf8',
+    });
+    let desktop = '';
+    if (out.status === 0) desktop = String(out.stdout || '').trim();
+    if (!desktop) {
+      // Fallback: read default app for text/html
+      const mime = spawnSync('xdg-mime', ['query', 'default', 'text/html'], {
+        encoding: 'utf8',
+      });
+      if (mime.status === 0) desktop = String(mime.stdout || '').trim();
+    }
+    if (!desktop) return null;
+
+    // Map common .desktop names to binaries
+    const map: Record<string, string[]> = {
+      'google-chrome.desktop': ['google-chrome-stable', 'google-chrome'],
+      'chromium.desktop': ['chromium-browser', 'chromium'],
+      'brave-browser.desktop': ['brave-browser'],
+      'microsoft-edge.desktop': ['microsoft-edge'],
+      'firefox.desktop': ['firefox'],
+      'opera.desktop': ['opera'],
+      'vivaldi-stable.desktop': ['vivaldi'],
+    };
+    const candidates = map[desktop] || [];
+    for (const bin of candidates) {
+      const r = spawnSync('which', [bin], { encoding: 'utf8' });
+      if (r.status === 0) {
+        const p = String(r.stdout || '').trim();
+        if (p && !isWindowsMountedPath(p)) return p;
+      }
     }
   } catch {
     // ignore

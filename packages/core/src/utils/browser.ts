@@ -58,7 +58,7 @@ export function shouldAttemptBrowserLaunch(): boolean {
  * Detect if running inside Windows Subsystem for Linux (WSL).
  * Uses common environment signals and kernel release string.
  */
-function isWSL(): boolean {
+export function isWSL(): boolean {
   if (process.platform !== 'linux') return false;
   if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
   try {
