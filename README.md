@@ -23,9 +23,110 @@ Gemini CLI is an open-source AI agent that brings the power of Gemini directly i
 
 #### Run instantly with npx
 
-```bash
-# Using npx (no installation required)
-npx https://github.com/google-gemini/gemini-cli
+1. **Prerequisites:** Ensure you have [Node.js version 20](https://nodejs.org/en/download) or higher installed.
+2. **Run the CLI:** Execute the following command in your terminal:
+
+   ```bash
+   npx https://github.com/google-gemini/gemini-cli
+   ```
+
+   Or install it with:
+
+   ```bash
+   npm install -g @google/gemini-cli
+   ```
+
+   Then, run the CLI from anywhere:
+
+   ```bash
+   gemini
+   ```
+
+### With Homebrew
+
+1. **Prerequisites:** Ensure you have [Homebrew](https://brew.sh/) installed.
+2. **Install the CLI:** Execute the following command in your terminal:
+
+   ```bash
+   brew install gemini-cli
+   ```
+
+   Then, run the CLI from anywhere:
+
+   ```bash
+   gemini
+   ```
+
+### Common Configuration steps
+
+1. **Pick a color theme**
+2. **Authenticate:** When prompted, sign in with your personal Google account. This will grant you up to 60 model requests per minute and 1,000 model requests per day using Gemini.
+
+You are now ready to use the Gemini CLI!
+
+### WSL/WSLg authentication
+
+- If you run the CLI inside Windows Subsystem for Linux (WSL) with WSLg enabled and a Linux GUI browser installed, Gemini CLI will open the authentication URL in your WSL-native browser.
+- If no display or Linux browser is available, the CLI will not auto-launch a browser and will print a URL for you to copy/paste into a browser.
+
+Tips:
+
+- Requirements: a display (`DISPLAY` or `WAYLAND_DISPLAY`) and a browser on PATH (e.g. `firefox`, `chromium`, `google-chrome`, `brave-browser`, `microsoft-edge`, `opera`, or `vivaldi`).
+- Force manual login (copy/paste URL):
+
+  ```bash
+  NO_BROWSER=true gemini
+  ```
+
+- Choose a specific browser:
+
+  ```bash
+  export BROWSER=firefox
+  ```
+
+- Advanced (callback tuning):
+  - `OAUTH_CALLBACK_HOST` (default: `localhost`)
+  - `OAUTH_CALLBACK_PORT` (validated numeric port)
+
+### Use a Gemini API key
+
+The Gemini API provides a free tier with [100 requests per day](https://ai.google.dev/gemini-api/docs/rate-limits#free-tier) using Gemini 2.5 Pro, control over which model you use, and access to higher rate limits (with a paid plan):
+
+1. Generate a key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. Set it as an environment variable in your terminal. Replace `YOUR_API_KEY` with your generated key.
+
+   ```bash
+   export GEMINI_API_KEY="YOUR_API_KEY"
+   ```
+
+3. (Optionally) Upgrade your Gemini API project to a paid plan on the API key page (will automatically unlock [Tier 1 rate limits](https://ai.google.dev/gemini-api/docs/rate-limits#tier-1))
+
+### Use a Vertex AI API key
+
+The Vertex AI API provides a [free tier](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview) using express mode for Gemini 2.5 Pro, control over which model you use, and access to higher rate limits with a billing account:
+
+1. Generate a key from [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys).
+2. Set it as an environment variable in your terminal. Replace `YOUR_API_KEY` with your generated key and set GOOGLE_GENAI_USE_VERTEXAI to true
+
+   ```bash
+   export GOOGLE_API_KEY="YOUR_API_KEY"
+   export GOOGLE_GENAI_USE_VERTEXAI=true
+   ```
+
+3. (Optionally) Add a billing account on your project to get access to [higher usage limits](https://cloud.google.com/vertex-ai/generative-ai/docs/quotas)
+
+For other authentication methods, including Google Workspace accounts, see the [authentication](./docs/cli/authentication.md) guide.
+
+## Examples
+
+Once the CLI is running, you can start interacting with Gemini from your shell.
+
+You can start a project from a new directory:
+
+```sh
+cd new-project/
+gemini
+> Write me a Gemini Discord bot that answers questions using a FAQ.md file I will provide
 ```
 
 #### Install globally with npm
