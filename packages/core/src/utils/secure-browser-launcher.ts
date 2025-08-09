@@ -84,6 +84,15 @@ export async function openBrowserSecurely(url: string): Promise<void> {
     case 'freebsd':
     case 'openbsd':
       // Linux and BSD variants
+      // If running under WSL, prefer native Linux browsers over Windows default.
+      if (isWSL()) {
+        const candidate = detectLinuxBrowserCandidate();
+        if (candidate) {
+          command = candidate;
+          args = [url];
+          break;
+        }
+      }
       // Try xdg-open first, fall back to other options
       command = 'xdg-open';
       args = [url];
@@ -121,6 +130,10 @@ export async function openBrowserSecurely(url: string): Promise<void> {
         'firefox',
         'chromium',
         'google-chrome',
+        'brave-browser',
+        'microsoft-edge',
+        'opera',
+        'vivaldi',
       ];
 
       for (const fallbackCommand of fallbackCommands) {
@@ -139,6 +152,54 @@ export async function openBrowserSecurely(url: string): Promise<void> {
       `Failed to open browser: ${error instanceof Error ? error.message : 'Unknown error'}`,
     );
   }
+}
+
+/** Detect if running inside Windows Subsystem for Linux (WSL). */
+function isWSL(): boolean {
+  if (platform() !== 'linux') return false;
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
+  try {
+    const os = require('node:os') as typeof import('node:os');
+    const release = String(os.release()).toLowerCase();
+    if (release.includes('microsoft')) return true;
+  } catch {
+    // ignore
+  }
+  try {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const version = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
+    if (version.includes('microsoft')) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+/**
+ * Attempt to find a native Linux browser binary to use under WSL.
+ * Returns the command name if found, otherwise null.
+ */
+function detectLinuxBrowserCandidate(): string | null {
+  try {
+    const { spawnSync } =
+      require('node:child_process') as typeof import('node:child_process');
+    const candidates = [
+      'firefox',
+      'chromium',
+      'google-chrome',
+      'brave-browser',
+      'microsoft-edge',
+      'opera',
+      'vivaldi',
+    ];
+    for (const name of candidates) {
+      const res = spawnSync('which', [name], { stdio: 'ignore' });
+      if (res.status === 0) return name;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 /**

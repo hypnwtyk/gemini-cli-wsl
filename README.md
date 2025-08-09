@@ -60,12 +60,36 @@ You have two options to install Gemini CLI.
 
 ### Common Configuration steps
 
-3. **Pick a color theme**
-4. **Authenticate:** When prompted, sign in with your personal Google account. This will grant you up to 60 model requests per minute and 1,000 model requests per day using Gemini.
+1. **Pick a color theme**
+2. **Authenticate:** When prompted, sign in with your personal Google account. This will grant you up to 60 model requests per minute and 1,000 model requests per day using Gemini.
 
 You are now ready to use the Gemini CLI!
 
-### Use a Gemini API key:
+### WSL/WSLg authentication
+
+- If you run the CLI inside Windows Subsystem for Linux (WSL) with WSLg enabled and a Linux GUI browser installed, Gemini CLI will open the authentication URL in your WSL-native browser.
+- If no display or Linux browser is available, the CLI will not auto-launch a browser and will print a URL for you to copy/paste into a browser.
+
+Tips:
+
+- Requirements: a display (`DISPLAY` or `WAYLAND_DISPLAY`) and a browser on PATH (e.g. `firefox`, `chromium`, `google-chrome`, `brave-browser`, `microsoft-edge`, `opera`, or `vivaldi`).
+- Force manual login (copy/paste URL):
+
+  ```bash
+  NO_BROWSER=true gemini
+  ```
+
+- Choose a specific browser:
+
+  ```bash
+  export BROWSER=firefox
+  ```
+
+- Advanced (callback tuning):
+  - `OAUTH_CALLBACK_HOST` (default: `localhost`)
+  - `OAUTH_CALLBACK_PORT` (validated numeric port)
+
+### Use a Gemini API key
 
 The Gemini API provides a free tier with [100 requests per day](https://ai.google.dev/gemini-api/docs/rate-limits#free-tier) using Gemini 2.5 Pro, control over which model you use, and access to higher rate limits (with a paid plan):
 
@@ -78,7 +102,7 @@ The Gemini API provides a free tier with [100 requests per day](https://ai.googl
 
 3. (Optionally) Upgrade your Gemini API project to a paid plan on the API key page (will automatically unlock [Tier 1 rate limits](https://ai.google.dev/gemini-api/docs/rate-limits#tier-1))
 
-### Use a Vertex AI API key:
+### Use a Vertex AI API key
 
 The Vertex AI API provides a [free tier](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview) using express mode for Gemini 2.5 Pro, control over which model you use, and access to higher rate limits with a billing account:
 

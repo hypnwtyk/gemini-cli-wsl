@@ -29,13 +29,15 @@ export function shouldAttemptBrowserLaunch(): boolean {
   // (checked below for Linux).
   const isSSH = !!process.env.SSH_CONNECTION;
 
-  // On Linux, the presence of a display server is a strong indicator of a GUI.
+  // On Linux (including WSL), ensure a display server is available and, for WSL,
+  // that a Linux GUI browser is present to avoid falling back to Windows browsers.
   if (process.platform === 'linux') {
-    // These are environment variables that can indicate a running compositor on
-    // Linux.
-    const displayVariables = ['DISPLAY', 'WAYLAND_DISPLAY', 'MIR_SOCKET'];
-    const hasDisplay = displayVariables.some((v) => !!process.env[v]);
+    const hasDisplay = linuxHasDisplay();
     if (!hasDisplay) {
+      return false;
+    }
+    // If running inside WSL, prefer not to auto-launch unless a Linux browser is installed.
+    if (isWSL() && !linuxHasInstalledBrowser()) {
       return false;
     }
   }
@@ -50,4 +52,65 @@ export function shouldAttemptBrowserLaunch(): boolean {
   // unless other signals (like SSH) suggest otherwise.
   // The `open` command's error handling will catch final edge cases.
   return true;
+}
+
+/**
+ * Detect if running inside Windows Subsystem for Linux (WSL).
+ * Uses common environment signals and kernel release string.
+ */
+function isWSL(): boolean {
+  if (process.platform !== 'linux') return false;
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
+  try {
+    const os = require('node:os') as typeof import('node:os');
+    const release = String(os.release()).toLowerCase();
+    if (release.includes('microsoft')) return true;
+  } catch {
+    // ignore
+  }
+  try {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const version = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
+    if (version.includes('microsoft')) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+/**
+ * Check if a Linux display server is available (X11/Wayland/Mir).
+ */
+function linuxHasDisplay(): boolean {
+  const displayVariables = ['DISPLAY', 'WAYLAND_DISPLAY', 'MIR_SOCKET'];
+  return displayVariables.some((v) => !!process.env[v]);
+}
+
+/**
+ * Detect if a known Linux browser binary is on PATH.
+ * This is used in WSL to avoid launching the Windows browser via wslview/xdg-open.
+ */
+function linuxHasInstalledBrowser(): boolean {
+  try {
+    const { spawnSync } =
+      require('node:child_process') as typeof import('node:child_process');
+    // Only consider native browser binaries; do not count xdg-open, which can
+    // forward to Windows browsers via wslview under WSL.
+    const candidates = [
+      'firefox',
+      'chromium',
+      'google-chrome',
+      'brave-browser',
+      'microsoft-edge',
+      'opera',
+      'vivaldi',
+    ];
+    for (const name of candidates) {
+      const res = spawnSync('which', [name], { stdio: 'ignore' });
+      if (res.status === 0) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
 }
