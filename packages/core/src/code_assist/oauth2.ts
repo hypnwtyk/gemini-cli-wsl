@@ -14,7 +14,8 @@ import * as http from 'http';
 import url from 'url';
 import crypto from 'crypto';
 import * as net from 'net';
-import open from 'open';
+// Use secure launcher to avoid WSL forwarding to Windows by xdg-open/wslview
+import { openBrowserSecurely } from '../utils/secure-browser-launcher.js';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import * as os from 'os';
@@ -156,21 +157,8 @@ export async function getOauthClient(
         `Otherwise navigate to:\n\n${webLogin.authUrl}\n\n`,
     );
     try {
-      // Attempt to open the authentication URL in the default browser.
-      // We do not use the `wait` option here because the main script's execution
-      // is already paused by `loginCompletePromise`, which awaits the server callback.
-      const childProcess = await open(webLogin.authUrl);
-
-      // IMPORTANT: Attach an error handler to the returned child process.
-      // Without this, if `open` fails to spawn a process (e.g., `xdg-open` is not found
-      // in a minimal Docker container), it will emit an unhandled 'error' event,
-      // causing the entire Node.js process to crash.
-      childProcess.on('error', (_) => {
-        console.error(
-          'Failed to open browser automatically. Please try running again with NO_BROWSER=true set.',
-        );
-        process.exit(1);
-      });
+      // Attempt to open the authentication URL in a secure, WSL-aware way.
+      await openBrowserSecurely(webLogin.authUrl);
     } catch (err) {
       console.error(
         'An unexpected error occurred while trying to open the browser:',

@@ -1,3 +1,5 @@
+# Developer Guide
+
 ## Building and running
 
 Before submitting any changes, it is crucial to validate them by running the full preflight check. This command will build the repository, run all tests, check for type errors, and lint the code.
@@ -9,6 +11,73 @@ npm run preflight
 ```
 
 This single command ensures that your changes meet all the quality gates of the project. While you can run the individual steps (`build`, `test`, `typecheck`, `lint`) separately, it is highly recommended to use `npm run preflight` to ensure a comprehensive validation.
+
+## Installing the CLI globally (your fork)
+
+There are three supported ways to install this project so the `gemini` command is available globally.
+
+### 1) Local build and global install (recommended)
+
+This avoids GitHub prepare pitfalls and ensures the bundled artifacts are included.
+
+```bash
+# From the repo root
+npm ci
+npm run bundle
+npm pack                    # creates google-gemini-cli-<version>.tgz
+npm install -g ./google-gemini-cli-*.tgz
+
+which gemini
+gemini --version
+```
+
+If you previously installed the upstream CLI, uninstall it first to avoid name collisions:
+
+```bash
+npm -g uninstall @google/gemini-cli || true
+rm -f "$(npm root -g)/../bin/gemini"  # remove stale bin if it exists
+```
+
+### 2) Dev symlink (auto-picks up changes)
+
+```bash
+npm ci
+npm run bundle
+npm link
+
+which gemini
+gemini --version
+```
+
+Re-run `npm run bundle` after code edits to refresh the built assets.
+
+### 3) Install directly from GitHub (advanced)
+
+Git-based installs run `prepare` and require dev dependencies and a real git repo. If you hit errors like `fatal: not a git repository` or missing `esbuild`, prefer option (1).
+
+```bash
+# If you still prefer GitHub, uninstall upstream first to avoid conflicts
+npm -g uninstall @google/gemini-cli || true
+rm -f "$(npm root -g)/../bin/gemini"
+
+# With an alias to avoid global name clash
+npm install -g gemini-cli-wsl@github:hypnwtyk/gemini-cli-wsl
+
+which gemini
+gemini --version
+```
+
+If you see `EEXIST` about an existing gemini bin, remove it and retry:
+
+```bash
+rm -f "$(npm root -g)/../bin/gemini"
+```
+
+### Notes
+
+- Node 20+ required.
+- If both upstream and this fork are installed, your PATH will decide which `gemini` runs.
+- To force manual authentication flow (copy/paste URL): `NO_BROWSER=true gemini`.
 
 ## Writing Tests
 
