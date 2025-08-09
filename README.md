@@ -88,6 +88,41 @@ Tips:
   - `OAUTH_CALLBACK_HOST` (default: `localhost`)
   - `OAUTH_CALLBACK_PORT` (validated numeric port)
 
+### Install this fork globally
+
+Recommended (build locally and install the packed tarball):
+
+```bash
+npm ci
+npm run bundle
+npm pack
+npm install -g ./google-gemini-cli-*.tgz
+
+which gemini
+gemini --version
+```
+
+If you previously installed the upstream CLI, uninstall it to avoid conflicts:
+
+```bash
+npm -g uninstall @google/gemini-cli || true
+rm -f "$(npm root -g)/../bin/gemini"
+```
+
+Dev symlink (auto-picks up changes; rerun `npm run bundle` after edits):
+
+```bash
+npm ci
+npm run bundle
+npm link
+```
+
+GitHub install (may fail due to prepare/dev-deps; prefer the tarball method above):
+
+```bash
+npm install -g gemini-cli-wsl@github:hypnwtyk/gemini-cli-wsl || true
+```
+
 ### Use a Gemini API key
 
 The Gemini API provides a free tier with [100 requests per day](https://ai.google.dev/gemini-api/docs/rate-limits#free-tier) using Gemini 2.5 Pro, control over which model you use, and access to higher rate limits (with a paid plan):
