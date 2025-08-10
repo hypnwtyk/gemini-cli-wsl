@@ -175,6 +175,19 @@ export async function getOauthClient(
   return client;
 }
 
+function sanitizeLoopbackHost(input: string | undefined): string {
+  const h = (input || '').trim().toLowerCase();
+  if (h === '127.0.0.1' || h === '::1' || h === 'localhost')
+    return h || 'localhost';
+  return 'localhost';
+}
+
+function formatHostForUrl(host: string): string {
+  // Wrap IPv6 literals in [] for URLs
+  if (host.includes(':') && host !== 'localhost') return `[${host}]`;
+  return host;
+}
+
 async function authWithUserCode(client: OAuth2Client): Promise<boolean> {
   const redirectUri = 'https://codeassist.google.com/authcode';
   const codeVerifier = await client.generateCodeVerifierAsync();
@@ -223,13 +236,10 @@ async function authWithUserCode(client: OAuth2Client): Promise<boolean> {
 
 async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
   const port = await getAvailablePort();
-  // The hostname used for the HTTP server binding (e.g., '0.0.0.0' in Docker).
-  const host = process.env.OAUTH_CALLBACK_HOST || 'localhost';
-  // The `redirectUri` sent to Google's authorization server MUST use a loopback IP literal
-  // (i.e., 'localhost' or '127.0.0.1'). This is a strict security policy for credentials of
-  // type 'Desktop app' or 'Web application' (when using loopback flow) to mitigate
-  // authorization code interception attacks.
-  const redirectUri = `http://localhost:${port}/oauth2callback`;
+  // Resolve the loopback host consistently for both server binding and redirect URL.
+  // Only allow localhost, 127.0.0.1, or ::1 to avoid leaking the callback externally.
+  const host = sanitizeLoopbackHost(process.env.OAUTH_CALLBACK_HOST);
+  const redirectUri = `http://${formatHostForUrl(host)}:${port}/oauth2callback`;
   const state = crypto.randomBytes(32).toString('hex');
   const authUrl = client.generateAuthUrl({
     redirect_uri: redirectUri,
