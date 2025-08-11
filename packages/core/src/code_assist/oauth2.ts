@@ -235,45 +235,43 @@ async function authWithUserCode(client: OAuth2Client): Promise<boolean> {
 }
 
 async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
-  const port = await getAvailablePort();
   // Resolve the loopback host consistently for both server binding and redirect URL.
   // Only allow localhost, 127.0.0.1, or ::1 to avoid leaking the callback externally.
   const host = sanitizeLoopbackHost(process.env.OAUTH_CALLBACK_HOST);
-  const redirectUri = `http://${formatHostForUrl(host)}:${port}/oauth2callback`;
   const state = crypto.randomBytes(32).toString('hex');
-  const authUrl = client.generateAuthUrl({
-    redirect_uri: redirectUri,
-    access_type: 'offline',
-    scope: OAUTH_SCOPE,
-    state,
-  });
+  let redirectUri = '';
 
+  // Create the server first and bind to an ephemeral port on the selected host.
+  // This guarantees the port is open before generating the redirect URL used by the browser.
+  let server: http.Server;
   const loginCompletePromise = new Promise<void>((resolve, reject) => {
-    const server = http.createServer(async (req, res) => {
+    server = http.createServer(async (req, res) => {
       try {
-        if (req.url!.indexOf('/oauth2callback') === -1) {
+        if (!req.url || req.url.indexOf('/oauth2callback') === -1) {
           res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL });
           res.end();
-          reject(new Error('Unexpected request: ' + req.url));
+          return reject(new Error('Unexpected request: ' + req.url));
         }
-        // acquire the code from the querystring, and close the web server.
-        const qs = new url.URL(req.url!, 'http://localhost:3000').searchParams;
+        // Acquire the code from the querystring, and close the web server.
+        const qs = new url.URL(req.url, `http://${host}:0`).searchParams;
         if (qs.get('error')) {
           res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL });
           res.end();
-
-          reject(new Error(`Error during authentication: ${qs.get('error')}`));
-        } else if (qs.get('state') !== state) {
+          return reject(
+            new Error(`Error during authentication: ${qs.get('error')}`),
+          );
+        }
+        if (qs.get('state') !== state) {
           res.end('State mismatch. Possible CSRF attack');
-
-          reject(new Error('State mismatch. Possible CSRF attack'));
-        } else if (qs.get('code')) {
+          return reject(new Error('State mismatch. Possible CSRF attack'));
+        }
+        const code = qs.get('code');
+        if (code) {
           const { tokens } = await client.getToken({
-            code: qs.get('code')!,
+            code,
             redirect_uri: redirectUri,
           });
           client.setCredentials(tokens);
-          // Retrieve and cache Google Account ID during authentication
           try {
             await fetchAndCacheUserInfo(client);
           } catch (error) {
@@ -281,28 +279,44 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
               'Failed to retrieve Google Account ID during authentication:',
               error,
             );
-            // Don't fail the auth flow if Google Account ID retrieval fails
           }
-
           res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_SUCCESS_URL });
           res.end();
-          resolve();
-        } else {
-          reject(new Error('No code found in request'));
+          return resolve();
         }
+        return reject(new Error('No code found in request'));
       } catch (e) {
-        reject(e);
+        return reject(e);
       } finally {
-        server.close();
+        try {
+          server.close();
+        } catch {}
       }
     });
-    server.listen(port, host);
+    server.once('error', (e) => reject(e));
   });
 
-  return {
-    authUrl,
-    loginCompletePromise,
-  };
+  // Bind and compute redirect URL
+  const boundPort: number = await new Promise((resolve, reject) => {
+    try {
+      server.listen(0, host, () => {
+        const address = server.address() as net.AddressInfo;
+        resolve(address.port);
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+  redirectUri = `http://${formatHostForUrl(host)}:${boundPort}/oauth2callback`;
+
+  const authUrl = client.generateAuthUrl({
+    redirect_uri: redirectUri,
+    access_type: 'offline',
+    scope: OAUTH_SCOPE,
+    state,
+  });
+
+  return { authUrl, loginCompletePromise };
 }
 
 export function getAvailablePort(): Promise<number> {
