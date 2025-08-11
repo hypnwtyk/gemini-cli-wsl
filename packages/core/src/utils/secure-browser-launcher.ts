@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type SpawnOptions } from 'node:child_process';
 import { promisify } from 'node:util';
 import { platform } from 'node:os';
 import { URL } from 'node:url';
@@ -120,20 +120,27 @@ export async function openBrowserSecurely(url: string): Promise<void> {
       throw new Error(`Unsupported platform: ${platformName}`);
   }
 
-  const options: Record<string, unknown> = {
-    // Don't inherit parent's environment to avoid potential issues
+  const spawnOptions: SpawnOptions = {
     env: {
       ...process.env,
-      // Ensure we're not in a shell that might interpret special characters
       SHELL: undefined,
     },
-    // Detach the browser process so it doesn't block
     detached: true,
     stdio: 'ignore',
   };
 
   try {
-    await execFileAsync(command, args, options);
+    // Use spawn so we don't wait for the browser process to exit.
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args, spawnOptions);
+      child.once('spawn', () => {
+        try {
+          child.unref();
+        } catch {}
+        resolve();
+      });
+      child.once('error', reject);
+    });
   } catch (error) {
     // For Linux, try fallback commands if xdg-open fails
     if (
@@ -156,10 +163,18 @@ export async function openBrowserSecurely(url: string): Promise<void> {
 
       for (const fallbackCommand of fallbackCommands) {
         try {
-          await execFileAsync(fallbackCommand, [url], options);
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn(fallbackCommand, [url], spawnOptions);
+            child.once('spawn', () => {
+              try {
+                child.unref();
+              } catch {}
+              resolve();
+            });
+            child.once('error', reject);
+          });
           return; // Success!
         } catch {
-          // Try next command
           continue;
         }
       }
