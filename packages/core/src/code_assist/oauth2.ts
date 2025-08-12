@@ -367,7 +367,11 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
   // Bind and compute redirect URL
   const boundPort: number = await new Promise((resolve, reject) => {
     try {
-      server.listen(0, host, () => {
+      // In WSLg some Chrome builds may run in a different network namespace or obey host proxies.
+      // Binding to 0.0.0.0 makes the listener reachable via the distro's local IP as well as 127.0.0.1.
+      // We still only advertise the redirect on 127.0.0.1 to avoid external exposure.
+      const listenHost = process.env.OAUTH_LISTEN_HOST || (host === '127.0.0.1' ? '0.0.0.0' : host);
+      server.listen(0, listenHost, () => {
         const address = server.address() as net.AddressInfo;
         resolve(address.port);
       });
