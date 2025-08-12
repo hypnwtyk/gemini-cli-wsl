@@ -43,3 +43,4 @@ packages/vscode-ide-companion/*.vsix
 # self
 .gitignore
 
+.audit/

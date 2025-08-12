@@ -178,14 +178,25 @@ export async function openBrowserSecurely(url: string): Promise<void> {
     );
   };
 
-  if ((platformName2 === 'linux' || platformName2 === 'freebsd' || platformName2 === 'openbsd') && isWSL()) {
+  if (
+    (platformName2 === 'linux' ||
+      platformName2 === 'freebsd' ||
+      platformName2 === 'openbsd') &&
+    isWSL()
+  ) {
     if (command && isChromiumFamily(command)) {
       // Prepend flags before the URL
-      const extraFlags = ['--no-proxy-server', "--proxy-bypass-list=<-loopback>"];
+      const extraFlags = [
+        '--no-proxy-server',
+        '--proxy-bypass-list=<-loopback>',
+      ];
       if (args && args.length > 0) {
         const originalUrl = args[args.length - 1];
         // Only adjust if last argument looks like a URL
-        if (typeof originalUrl === 'string' && /^(https?:)?\/\//.test(originalUrl)) {
+        if (
+          typeof originalUrl === 'string' &&
+          /^(https?:)?\/\//.test(originalUrl)
+        ) {
           args = [...extraFlags, originalUrl];
         } else {
           args = [...extraFlags, ...args];
@@ -193,15 +204,24 @@ export async function openBrowserSecurely(url: string): Promise<void> {
       } else {
         args = extraFlags;
       }
-      await writeAuthDebug('Applied Chromium proxy bypass flags for WSL: --no-proxy-server --proxy-bypass-list=<-loopback>');
+      await writeAuthDebug(
+        'Applied Chromium proxy bypass flags for WSL: --no-proxy-server --proxy-bypass-list=<-loopback>',
+      );
     }
     // Also scrub proxy-related environment variables for the spawned browser process
-    for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']) {
+    for (const key of [
+      'http_proxy',
+      'https_proxy',
+      'HTTP_PROXY',
+      'HTTPS_PROXY',
+    ]) {
       if (launchEnv[key] !== undefined) delete launchEnv[key];
     }
     launchEnv['NO_PROXY'] = '127.0.0.1,localhost';
     launchEnv['no_proxy'] = '127.0.0.1,localhost';
-    await writeAuthDebug('Scrubbed proxy env for browser launch under WSL (set NO_PROXY for localhost).');
+    await writeAuthDebug(
+      'Scrubbed proxy env for browser launch under WSL (set NO_PROXY for localhost).',
+    );
   }
 
   const spawnOptions: SpawnOptions = {
