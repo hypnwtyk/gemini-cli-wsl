@@ -16,7 +16,9 @@ import { isWSL as coreIsWSL } from './browser.js';
 const execFileAsync = promisify(execFile);
 
 function isAuthDebug(): boolean {
-  return process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1';
+  return (
+    process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1'
+  );
 }
 
 async function writeAuthDebug(message: string): Promise<void> {
@@ -136,12 +138,16 @@ export async function openBrowserSecurely(url: string): Promise<void> {
         // try to auto-detect a .desktop default and resolve it to a real binary.
         const desktopDefault = resolveDefaultLinuxBrowser();
         if (desktopDefault) {
-          await writeAuthDebug(`Using desktop default browser: ${desktopDefault}`);
+          await writeAuthDebug(
+            `Using desktop default browser: ${desktopDefault}`,
+          );
           command = desktopDefault;
           args = [url];
           break;
         }
-        await writeAuthDebug('No browser found via which/desktop default under WSL. Falling back to xdg-open');
+        await writeAuthDebug(
+          'No browser found via which/desktop default under WSL. Falling back to xdg-open',
+        );
       }
       // Try xdg-open first, fall back to other options
       command = 'xdg-open';
@@ -163,6 +169,7 @@ export async function openBrowserSecurely(url: string): Promise<void> {
 
   try {
     await writeAuthDebug(`Launching browser: ${command} ${args.join(' ')}`);
+    const t0 = Date.now();
     // Use spawn so we don't wait for the browser process to exit.
     await new Promise<void>((resolve, reject) => {
       const child = spawn(command, args, spawnOptions);
@@ -175,6 +182,7 @@ export async function openBrowserSecurely(url: string): Promise<void> {
       });
       child.once('error', reject);
     });
+    await writeAuthDebug(`Launch returned in ${Date.now() - t0}ms`);
   } catch (error) {
     await writeAuthDebug(
       `Primary launch failed for ${command}: ${error instanceof Error ? error.message : String(error)}`,
@@ -200,7 +208,9 @@ export async function openBrowserSecurely(url: string): Promise<void> {
 
       for (const fallbackCommand of fallbackCommands) {
         try {
-          await writeAuthDebug(`Attempting fallback browser: ${fallbackCommand}`);
+          await writeAuthDebug(
+            `Attempting fallback browser: ${fallbackCommand}`,
+          );
           await new Promise<void>((resolve, reject) => {
             const child = spawn(fallbackCommand, [url], spawnOptions);
             child.once('spawn', () => {

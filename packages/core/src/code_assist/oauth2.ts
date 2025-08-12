@@ -236,7 +236,9 @@ async function authWithUserCode(client: OAuth2Client): Promise<boolean> {
 }
 
 function isAuthDebug(): boolean {
-  return process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1';
+  return (
+    process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1'
+  );
 }
 
 async function writeAuthDebug(message: string): Promise<void> {
@@ -283,12 +285,16 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
         }
         if (qs.get('state') !== state) {
           res.end('State mismatch. Possible CSRF attack');
-          await writeAuthDebug(`State mismatch. expected=${state} got=${qs.get('state')}`);
+          await writeAuthDebug(
+            `State mismatch. expected=${state} got=${qs.get('state')}`,
+          );
           return reject(new Error('State mismatch. Possible CSRF attack'));
         }
         const code = qs.get('code');
         if (code) {
-          await writeAuthDebug('Received authorization code. Exchanging for tokens...');
+          await writeAuthDebug(
+            'Received authorization code. Exchanging for tokens...',
+          );
           const { tokens } = await client.getToken({
             code,
             redirect_uri: redirectUri,
@@ -302,12 +308,16 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
               error,
             );
           }
-          await writeAuthDebug('Token exchange succeeded. Redirecting to success page.');
+          await writeAuthDebug(
+            'Token exchange succeeded. Redirecting to success page.',
+          );
           res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_SUCCESS_URL });
           res.end();
           return resolve();
         }
-        await writeAuthDebug('No authorization code found in callback request.');
+        await writeAuthDebug(
+          'No authorization code found in callback request.',
+        );
         return reject(new Error('No code found in request'));
       } catch (e) {
         await writeAuthDebug(`Callback handler exception: ${String(e)}`);
@@ -333,7 +343,9 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
     }
   });
   redirectUri = `http://${formatHostForUrl(host)}:${boundPort}/oauth2callback`;
-  await writeAuthDebug(`Auth server listening on ${host}:${boundPort}; redirectUri=${redirectUri}`);
+  await writeAuthDebug(
+    `Auth server listening on ${host}:${boundPort}; redirectUri=${redirectUri}`,
+  );
 
   const authUrl = client.generateAuthUrl({
     redirect_uri: redirectUri,

@@ -12,6 +12,8 @@ import { readStdin } from './utils/readStdin.js';
 import { basename } from 'node:path';
 import v8 from 'node:v8';
 import os from 'node:os';
+import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import dns from 'node:dns';
 import { spawn } from 'node:child_process';
 import { start_sandbox } from './utils/sandbox.js';
@@ -128,6 +130,20 @@ ${reason.stack}`
 }
 
 export async function main() {
+  const isDebug =
+    process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1';
+  const tStart = Date.now();
+  if (isDebug) {
+    try {
+      const logDir = path.join(os.homedir(), '.gemini');
+      await fs.mkdir(logDir, { recursive: true });
+      const logPath = path.join(logDir, 'auth-debug.log');
+      const line = `[${new Date().toISOString()}] [cli] start gemini pid=${process.pid} cwd=${process.cwd()}\n`;
+      await fs.appendFile(logPath, line, 'utf8');
+      // eslint-disable-next-line no-console
+      console.error(line.trimEnd());
+    } catch {}
+  }
   setupUnhandledRejectionHandler();
   const workspaceRoot = process.cwd();
   const settings = loadSettings(workspaceRoot);
@@ -269,6 +285,17 @@ export async function main() {
       </React.StrictMode>,
       { exitOnCtrlC: false },
     );
+
+    if (isDebug) {
+      try {
+        const logDir = path.join(os.homedir(), '.gemini');
+        const logPath = path.join(logDir, 'auth-debug.log');
+        const line = `[${new Date().toISOString()}] [cli] interactive UI rendered. elapsedMs=${Date.now() - tStart}\n`;
+        await fs.appendFile(logPath, line, 'utf8');
+        // eslint-disable-next-line no-console
+        console.error(line.trimEnd());
+      } catch {}
+    }
 
     checkForUpdates()
       .then((info) => {
