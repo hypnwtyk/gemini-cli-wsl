@@ -56,6 +56,7 @@ const SIGN_IN_FAILURE_URL =
 
 const GEMINI_DIR = '.gemini';
 const CREDENTIAL_FILENAME = 'oauth_creds.json';
+const OAUTH_SERVER_TIMEOUT_MS = Number(process.env.OAUTH_TIMEOUT_MS || 300000);
 
 /**
  * An Authentication URL for updating the credentials of a Oauth2Client
@@ -263,72 +264,104 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
 
   // Create the server first and bind to an ephemeral port on the selected host.
   // This guarantees the port is open before generating the redirect URL used by the browser.
-  let server: http.Server;
-  const loginCompletePromise = new Promise<void>((resolve, reject) => {
-    server = http.createServer(async (req, res) => {
-      try {
-        if (!req.url || req.url.indexOf('/oauth2callback') === -1) {
-          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL });
-          res.end();
-          await writeAuthDebug(`Unexpected request to callback: ${req.url}`);
-          return reject(new Error('Unexpected request: ' + req.url));
-        }
-        // Acquire the code from the querystring, and close the web server.
-        const qs = new url.URL(req.url, `http://${host}:0`).searchParams;
-        if (qs.get('error')) {
-          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL });
-          res.end();
-          await writeAuthDebug(`Error param from provider: ${qs.get('error')}`);
-          return reject(
-            new Error(`Error during authentication: ${qs.get('error')}`),
-          );
-        }
-        if (qs.get('state') !== state) {
-          res.end('State mismatch. Possible CSRF attack');
-          await writeAuthDebug(
-            `State mismatch. expected=${state} got=${qs.get('state')}`,
-          );
-          return reject(new Error('State mismatch. Possible CSRF attack'));
-        }
-        const code = qs.get('code');
-        if (code) {
-          await writeAuthDebug(
-            'Received authorization code. Exchanging for tokens...',
-          );
-          const { tokens } = await client.getToken({
-            code,
-            redirect_uri: redirectUri,
-          });
-          client.setCredentials(tokens);
-          try {
-            await fetchAndCacheUserInfo(client);
-          } catch (error) {
-            console.error(
-              'Failed to retrieve Google Account ID during authentication:',
-              error,
-            );
-          }
-          await writeAuthDebug(
-            'Token exchange succeeded. Redirecting to success page.',
-          );
-          res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_SUCCESS_URL });
-          res.end();
-          return resolve();
-        }
+  const server = http.createServer(async (req, res) => {
+    try {
+      const reqUrl = req.url || '';
+      await writeAuthDebug(`Incoming request: ${req.method} ${reqUrl}`);
+      if (!req.url) {
+        res.writeHead(400);
+        res.end('Bad Request');
+        return;
+      }
+      const parsed = new url.URL(req.url, `http://${formatHostForUrl(host)}`);
+      if (parsed.pathname === '/favicon.ico') {
+        await writeAuthDebug('Ignoring /favicon.ico request');
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (parsed.pathname !== '/oauth2callback') {
+        await writeAuthDebug(`Unexpected path: ${parsed.pathname}`);
+        res.writeHead(404);
+        res.end('Not Found');
+        return;
+      }
+      const qs = parsed.searchParams;
+      if (qs.get('error')) {
+        res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_FAILURE_URL });
+        res.end();
+        await writeAuthDebug(`Error param from provider: ${qs.get('error')}`);
+        cleanupAndReject(
+          new Error(`Error during authentication: ${qs.get('error')}`),
+        );
+        return;
+      }
+      if (qs.get('state') !== state) {
+        res.end('State mismatch. Possible CSRF attack');
+        await writeAuthDebug(
+          `State mismatch. expected=${state} got=${qs.get('state')}`,
+        );
+        cleanupAndReject(new Error('State mismatch. Possible CSRF attack'));
+        return;
+      }
+      const code = qs.get('code');
+      if (!code) {
         await writeAuthDebug(
           'No authorization code found in callback request.',
         );
-        return reject(new Error('No code found in request'));
-      } catch (e) {
-        await writeAuthDebug(`Callback handler exception: ${String(e)}`);
-        return reject(e);
-      } finally {
-        try {
-          server.close();
-        } catch {}
+        res.writeHead(400);
+        res.end('Missing code');
+        return;
       }
-    });
-    server.once('error', (e) => reject(e));
+      await writeAuthDebug(
+        'Received authorization code. Exchanging for tokens...',
+      );
+      const { tokens } = await client.getToken({
+        code,
+        redirect_uri: redirectUri,
+      });
+      client.setCredentials(tokens);
+      try {
+        await fetchAndCacheUserInfo(client);
+      } catch (error) {
+        console.error(
+          'Failed to retrieve Google Account ID during authentication:',
+          error,
+        );
+      }
+      await writeAuthDebug(
+        'Token exchange succeeded. Redirecting to success page.',
+      );
+      res.writeHead(HTTP_REDIRECT, { Location: SIGN_IN_SUCCESS_URL });
+      res.end();
+      cleanupAndResolve();
+    } catch (e) {
+      await writeAuthDebug(`Callback handler exception: ${String(e)}`);
+      cleanupAndReject(e as Error);
+    }
+  });
+
+  let loginResolve: (() => void) | null = null;
+  let loginReject: ((e: Error) => void) | null = null;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  const cleanupAndResolve = () => {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    try {
+      server.close();
+    } catch {}
+    if (loginResolve) loginResolve();
+  };
+  const cleanupAndReject = (e: Error) => {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    try {
+      server.close();
+    } catch {}
+    if (loginReject) loginReject(e);
+  };
+
+  const loginCompletePromise = new Promise<void>((resolve, reject) => {
+    loginResolve = resolve;
+    loginReject = reject;
   });
 
   // Bind and compute redirect URL
@@ -342,6 +375,13 @@ async function authWithWeb(client: OAuth2Client): Promise<OauthWebLogin> {
       reject(e);
     }
   });
+  // Timeout to avoid hanging forever waiting for callback
+  timeoutHandle = setTimeout(async () => {
+    await writeAuthDebug(
+      `OAuth server timeout after ${OAUTH_SERVER_TIMEOUT_MS}ms waiting for callback`,
+    );
+    cleanupAndReject(new Error('OAuth callback timeout'));
+  }, OAUTH_SERVER_TIMEOUT_MS);
   redirectUri = `http://${formatHostForUrl(host)}:${boundPort}/oauth2callback`;
   await writeAuthDebug(
     `Auth server listening on ${host}:${boundPort}; redirectUri=${redirectUri}`,
