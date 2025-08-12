@@ -6,11 +6,34 @@
 
 import { execFile, spawn, type SpawnOptions } from 'node:child_process';
 import { promisify } from 'node:util';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { platform } from 'node:os';
 import { URL } from 'node:url';
 import { isWSL as coreIsWSL } from './browser.js';
 
 const execFileAsync = promisify(execFile);
+
+function isAuthDebug(): boolean {
+  return process.env.GEMINI_AUTH_DEBUG === '1' || process.env.GEMINI_DEBUG === '1';
+}
+
+async function writeAuthDebug(message: string): Promise<void> {
+  if (!isAuthDebug()) return;
+  try {
+    const logDir = path.join(os.homedir(), '.gemini');
+    await fs.mkdir(logDir, { recursive: true });
+    const logPath = path.join(logDir, 'auth-debug.log');
+    const line = `[${new Date().toISOString()}] [secure-browser-launcher] ${message}\n`;
+    await fs.appendFile(logPath, line, 'utf8');
+    // Also echo to stderr for immediate visibility
+    // eslint-disable-next-line no-console
+    console.error(line.trimEnd());
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Validates that a URL is safe to open in a browser.
@@ -85,10 +108,16 @@ export async function openBrowserSecurely(url: string): Promise<void> {
     case 'freebsd':
     case 'openbsd':
       // Linux and BSD variants
+      await writeAuthDebug(
+        `Platform=${platformName} BROWSER=${process.env.BROWSER || ''} DISPLAY=${
+          process.env.DISPLAY || ''
+        } WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY || ''} isWSL=${isWSL()}`,
+      );
       // First, honor an explicit BROWSER if it's a valid Linux binary path
       {
         const forced = resolveBrowserFromEnv();
         if (forced) {
+          await writeAuthDebug(`Using BROWSER override: ${forced}`);
           command = forced;
           args = [url];
           break;
@@ -98,6 +127,7 @@ export async function openBrowserSecurely(url: string): Promise<void> {
       if (isWSL()) {
         const candidate = detectLinuxBrowserCandidate();
         if (candidate) {
+          await writeAuthDebug(`Detected browser candidate: ${candidate}`);
           command = candidate;
           args = [url];
           break;
@@ -106,10 +136,12 @@ export async function openBrowserSecurely(url: string): Promise<void> {
         // try to auto-detect a .desktop default and resolve it to a real binary.
         const desktopDefault = resolveDefaultLinuxBrowser();
         if (desktopDefault) {
+          await writeAuthDebug(`Using desktop default browser: ${desktopDefault}`);
           command = desktopDefault;
           args = [url];
           break;
         }
+        await writeAuthDebug('No browser found via which/desktop default under WSL. Falling back to xdg-open');
       }
       // Try xdg-open first, fall back to other options
       command = 'xdg-open';
@@ -130,6 +162,7 @@ export async function openBrowserSecurely(url: string): Promise<void> {
   };
 
   try {
+    await writeAuthDebug(`Launching browser: ${command} ${args.join(' ')}`);
     // Use spawn so we don't wait for the browser process to exit.
     await new Promise<void>((resolve, reject) => {
       const child = spawn(command, args, spawnOptions);
@@ -137,11 +170,15 @@ export async function openBrowserSecurely(url: string): Promise<void> {
         try {
           child.unref();
         } catch {}
+        void writeAuthDebug('Browser process spawned successfully');
         resolve();
       });
       child.once('error', reject);
     });
   } catch (error) {
+    await writeAuthDebug(
+      `Primary launch failed for ${command}: ${error instanceof Error ? error.message : String(error)}`,
+    );
     // For Linux, try fallback commands if xdg-open fails
     if (
       (platformName === 'linux' ||
@@ -163,18 +200,21 @@ export async function openBrowserSecurely(url: string): Promise<void> {
 
       for (const fallbackCommand of fallbackCommands) {
         try {
+          await writeAuthDebug(`Attempting fallback browser: ${fallbackCommand}`);
           await new Promise<void>((resolve, reject) => {
             const child = spawn(fallbackCommand, [url], spawnOptions);
             child.once('spawn', () => {
               try {
                 child.unref();
               } catch {}
+              void writeAuthDebug(`Fallback spawned: ${fallbackCommand}`);
               resolve();
             });
             child.once('error', reject);
           });
           return; // Success!
         } catch {
+          await writeAuthDebug(`Fallback failed: ${fallbackCommand}`);
           continue;
         }
       }
