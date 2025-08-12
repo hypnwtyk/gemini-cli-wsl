@@ -177,9 +177,10 @@ export async function getOauthClient(
 
 function sanitizeLoopbackHost(input: string | undefined): string {
   const h = (input || '').trim().toLowerCase();
-  if (h === '127.0.0.1' || h === '::1' || h === 'localhost')
-    return h || 'localhost';
-  return 'localhost';
+  // Prefer IPv4 loopback for widest compatibility in WSL/WSLg
+  if (h === 'localhost' || h === '') return '127.0.0.1';
+  if (h === '127.0.0.1' || h === '::1') return h;
+  return '127.0.0.1';
 }
 
 function formatHostForUrl(host: string): string {
